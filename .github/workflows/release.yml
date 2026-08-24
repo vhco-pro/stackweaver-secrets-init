@@ -1,0 +1,173 @@
+# Copyright (c) 2025 VH & Co BV. Licensed under the Business Source License 1.1. See LICENSE for details.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - '*.*.*'
+
+permissions: {}
+
+jobs:
+  build:
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Build and push by digest
+        uses: michielvha/docker-release-action@c499e52a1a05e5bdd8cf03ba19a423d4c7ec25e3 # v2
+        with:
+          matrix-mode: build
+          version: ${{ github.ref_name }}
+          registry: ghcr.io
+          username: vhco-pro
+          password: ${{ secrets.GITHUB_TOKEN }}
+          project: stackweaver-secrets-init
+          platforms: ${{ matrix.platform }}
+          context: .
+
+  merge:
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Create multi-arch manifest
+        uses: michielvha/docker-release-action@c499e52a1a05e5bdd8cf03ba19a423d4c7ec25e3 # v2
+        with:
+          matrix-mode: merge
+          version: ${{ github.ref_name }}
+          registry: ghcr.io
+          username: vhco-pro
+          password: ${{ secrets.GITHUB_TOKEN }}
+          project: stackweaver-secrets-init
+          trivy-exit-code: '1'
+          cosign-sign: 'true'
+          sbom: 'true'
+          attest-provenance: ${{ github.event.repository.visibility == 'public' }}
+          attest-sbom: ${{ github.event.repository.visibility == 'public' }}
+          vex: security/vex/stackweaver-secrets-init.openvex.json
+          attest-vex: ${{ github.event.repository.visibility == 'public' }}
+
+  changelog:
+    needs: merge
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Changelog & GitHub Release
+        uses: michielvha/changelog-release-action@81984f615bdcb8f88bbf92f49cae8d70f0fce099 # main snapshot 2026-05-23
+        with:
+          version: ${{ github.ref_name }}
+
+  release-assets:
+    needs: [merge, changelog]
+    if: ${{ github.event.repository.visibility == 'public' }}
+    permissions:
+      contents: write       # upload to GitHub Release
+      packages: read        # read GHCR for digest lookup
+      attestations: read    # read attestation store
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR (for private packages)
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: vhco-pro
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image digest
+        id: digest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Container packages owned by an org → /orgs/<org>/packages
+          digest=$(gh api --paginate \
+            "/orgs/vhco-pro/packages/container/${REPO_NAME}/versions" \
+            --jq ".[] | select(.metadata.container.tags[]? == \"${TAG}\") | .name" | head -1)
+          if [ -z "${digest}" ]; then
+            echo "::error::Could not resolve digest for ${REPO_NAME}:${TAG}"
+            exit 1
+          fi
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Resolved ghcr.io/${{ github.repository }}@${digest}"
+
+      - name: Download SLSA provenance bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          set -euo pipefail
+          gh attestation download \
+            "oci://ghcr.io/${{ github.repository }}@${DIGEST}" \
+            --predicate-type https://slsa.dev/provenance/v1 \
+            -R "${{ github.repository }}" || {
+              echo "::warning::SLSA provenance download failed"; exit 0; }
+          # gh attestation download writes <digest-without-prefix>.jsonl
+          f=$(ls -1 *.jsonl 2>/dev/null | head -1 || true)
+          if [ -n "${f}" ]; then
+            mv "${f}" provenance.intoto.jsonl
+            echo "Renamed ${f} -> provenance.intoto.jsonl"
+          fi
+
+      - name: Download SPDX SBOM bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          set -euo pipefail
+          gh attestation download \
+            "oci://ghcr.io/${{ github.repository }}@${DIGEST}" \
+            --predicate-type https://spdx.dev/Document/v2.3 \
+            -R "${{ github.repository }}" || {
+              echo "::warning::SBOM download failed"; exit 0; }
+          f=$(ls -1 *.jsonl 2>/dev/null | grep -v '^provenance.intoto.jsonl$' | head -1 || true)
+          if [ -n "${f}" ]; then
+            mv "${f}" sbom.spdx.intoto.jsonl
+            echo "Renamed ${f} -> sbom.spdx.intoto.jsonl"
+          fi
+
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          if ls *.intoto.jsonl 1>/dev/null 2>&1; then
+            sha256sum *.intoto.jsonl > checksums.txt
+            cat checksums.txt
+          else
+            echo "No .intoto.jsonl files present; skipping checksums" > checksums.txt
+          fi
+
+      - name: Attach assets to GitHub Release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            provenance.intoto.jsonl
+            sbom.spdx.intoto.jsonl
+            checksums.txt
+          fail_on_unmatched_files: false
