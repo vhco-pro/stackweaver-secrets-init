@@ -1,1 +1,2 @@
-zitadel-init
+# Built binary (anchored: must not match the module root or any source dir)
+/secrets-init
