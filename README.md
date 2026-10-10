@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="https://sw.vhco.pro/logo.png" alt="Stackweaver" width="150" />
+<img src="https://raw.githubusercontent.com/vhco-pro/.github/main/profile/assets/stackweaver.png" alt="Stackweaver" width="150" />
 
 # Stackweaver Secrets Init
 
@@ -11,13 +11,13 @@
 [![CodeQL](https://github.com/vhco-pro/stackweaver-secrets-init/actions/workflows/codeql.yml/badge.svg)](https://github.com/vhco-pro/stackweaver-secrets-init/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/vhco-pro/stackweaver-secrets-init/badge)](https://scorecard.dev/viewer/?uri=github.com/vhco-pro/stackweaver-secrets-init)
 [![License](https://img.shields.io/badge/license-BSL%201.1-blue)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-sw.vhco.pro-0ea5e9)](https://sw.vhco.pro/docs)
+[![Docs](https://img.shields.io/badge/docs-stackweaver.sh-0ea5e9)](https://stackweaver.sh/docs)
 
-Secret bootstrap container for the [Stackweaver](https://sw.vhco.pro) DevOps platform. Creates the Kubernetes Secrets the Helm chart manages on your behalf, before anything else starts.
+Secret bootstrap container for the [Stackweaver](https://stackweaver.sh) DevOps platform. Creates the Kubernetes Secrets the Helm chart manages on your behalf, before anything else starts.
 
 </div>
 
-This is the public release repository for the Stackweaver Secrets Init container. It is published from the Stackweaver source tree on every release. See the [release sync architecture](https://sw.vhco.pro/docs/security/sync-architecture) for how releases are built, signed, and mirrored here.
+This is the public release repository for the Stackweaver Secrets Init container. It is published from the Stackweaver source tree on every release. See the [release sync architecture](https://stackweaver.sh/docs/security/sync-architecture) for how releases are built, signed, and mirrored here.
 
 ## What it does
 
@@ -40,4 +40,4 @@ This is the one process in a Stackweaver release that holds secret-create RBAC, 
 docker pull ghcr.io/vhco-pro/stackweaver-secrets-init:latest
 ```
 
-It is not intended to be run by hand; the chart supplies `NAMESPACE` and `SECRETS_SPEC`. See the [Stackweaver documentation](https://sw.vhco.pro/docs) for deployment instructions, and [`secretsInit.image`](https://sw.vhco.pro/docs/get-started/self-hosting/kubernetes) for pointing the chart at a private mirror.
+It is not intended to be run by hand; the chart supplies `NAMESPACE` and `SECRETS_SPEC`. See the [Stackweaver documentation](https://stackweaver.sh/docs) for deployment instructions, and [`secretsInit.image`](https://stackweaver.sh/docs/get-started/self-hosting/kubernetes) for pointing the chart at a private mirror.
