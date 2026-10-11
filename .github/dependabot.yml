@@ -1,0 +1,16 @@
+# Same configuration as the other synced satellites.
+# Narrowed: only the `github-actions` ecosystem is scanned. All other manifests in this repo
+# (go.mod, Dockerfile) are synced from the michielvha/stackweaver monorepo and overwritten on
+# every sync, so those dependencies are managed in the monorepo - scanning them here would only
+# produce PRs the sync clobbers.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      github-actions-non-security:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
